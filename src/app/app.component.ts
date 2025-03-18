@@ -28,112 +28,68 @@ export class AppComponent {
 	constructor(private readonly spinner: NgxSpinnerService) {}
 
 	ngOnInit() {
-		/** spinner starts on init */
-		this.spinner.show();
+		// this.spinner.show();
 		
-		setTimeout(() => {
-		  /** spinner ends after 5 seconds */
-		  this.spinner.hide();
-		}, 2000);
-	  }
-
-	async zipMultipleZipFilesWithJsZip(): Promise<void> {
-	  try {
-		const data = await this.getMockApiZipData();
-		const mainZip = new JSZip();
-		this.totalContracts = data.length;
-  
-		for (let i = 0; i < this.totalContracts; i++) {
-		  mainZip.file(data[i].fileName, data[i].fileData);
-		  this.zipProgress = Math.round(((i + 1) / this.totalContracts) * 100);
-		}
-  
-		const mainZipBlob = await mainZip.generateAsync({ type: 'blob' });
-  
-		const link = document.createElement('a');
-		link.href = URL.createObjectURL(mainZipBlob);
-		link.download = 'Main.zip';
-		link.click();
-	  } catch (error) {
-		console.error(error);
-	  }
+		// setTimeout(() => {
+		//   this.spinner.hide();
+		// }, 2000);
 	}
 
 	async zipMultipleZipFilesWithJsZipDelay(): Promise<void> {
 		try {
-		  const data = await this.getMockApiZipData();
-		  const mainZip = new JSZip();
-		  this.totalContracts = data.length;
-		  this.zipProgress = 0;
-	  
-		  for (let i = 0; i < this.totalContracts; i++) {
-			const contract = data[i];
-	  
-			mainZip.file(contract.fileName, contract.fileData);
-	  
-			await new Promise(resolve => setTimeout(resolve, 500));
-	  
-			this.zipProgress = Math.round(((i + 1) / this.totalContracts) * 100);
-		  }
-	  
-		  const mainZipBlob = await mainZip.generateAsync({ type: 'blob' });
-	  
-		  const link = document.createElement('a');
-		  link.href = URL.createObjectURL(mainZipBlob);
-		  link.download = 'Main_1.zip';
-		  link.click();
-	  
-		} catch (error) {
-		  console.log(error);
-		}
-	}
-
-	private async getMockApiZipData(): Promise<ZipObject[]> {
-		const mockZipContent = new Uint8Array([80, 75, 3, 4, 20, 0, 0, 0, 8, 0]); // Mock ZIP file header
+			const mainZip = new JSZip();
+			this.zipProgress = 0;
+			const totalFiles = 20;
 	
-		return [
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX1.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX2.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX3.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX4.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX5.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX6.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX7.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX8.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXXX9.zip',
-				fileData: mockZipContent,
-			},
-			{
-				fileName: 'TAX_RECEIPT_CT0XXXXX10.zip',
-				fileData: mockZipContent,
-			},
-		];
+			for (let i = 0; i < totalFiles; i++) {
+				const response = await this.getMockApiZipData();
+
+				const contentDisposition = response.headers.get("Content-Disposition");
+				const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
+	
+				const zipData = await response.blob();
+				mainZip.file(filename, zipData);
+	
+				// Update progress first 50% for fetching data
+				this.zipProgress = Math.round(((i + 1) / totalFiles) * 50);
+			}
+	
+			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
+				// Update progress second 50% for compression
+				this.zipProgress = 50 + Math.round(metadata.percent / 2);
+			});
+	
+			const link = document.createElement("a");
+			link.href = URL.createObjectURL(zipBlob);
+			link.download = "Main_Zip.zip";
+			link.click();
+	
+			this.zipProgress = 100;
+	
+		} catch (error) {
+			console.error(error);
+		}
+	}	
+	
+	private extractFilenameFromContentDisposition(contentDisposition: string): string {
+		const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+		return match ? match[1] : "default.zip";
 	}
+	
+	private async getMockApiZipData(): Promise<Response> {
+		const mockZipContent = new Uint8Array([80, 75, 3, 4, 20, 0, 0, 0, 8, 0]); // Mock ZIP file header
+		const zipBlob = new Blob([mockZipContent], { type: "application/zip" });
+	
+		await new Promise(resolve => setTimeout(resolve, Math.random() * 1500));
+	
+		return new Response(zipBlob, {
+			status: 200,
+			headers: {
+				"Content-Type": "application/zip",
+				"Content-Disposition": `attachment; filename="mock-file-${Math.random().toString(36).slice(2, 10)}.zip"`,
+			},
+		});
+	}	
 
 	async downloadNestedZip() {
 		const apiData = await this.getMockApiData();

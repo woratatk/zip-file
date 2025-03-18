@@ -3,9 +3,9 @@
     <ngx-spinner 
       bdColor="rgba(0, 0, 0, 0.8)" 
       size="large" 
-      color="red" 
+      color="white" 
       type="ball-spin-clockwise"
-    >Loading...</ngx-spinner>
+    ></ngx-spinner>
     <div class="zip-section m-4">
       <progressbar [value]="zipProgress" [striped]="true" [animate]="true" type="success">{{ zipProgress }}%</progressbar>
       <button type="button" class="btn btn-primary mt-2" (click)="zipMultipleZipFilesWithJsZipDelay()">Start Zipping</button>
