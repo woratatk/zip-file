@@ -27,18 +27,18 @@ export class AppComponent {
 	constructor(private readonly spinner: NgxSpinnerService) {}
 
 	ngOnInit() {
-		// this.spinner.show();
+		this.spinner.show();
 		
-		// setTimeout(() => {
-		//   this.spinner.hide();
-		// }, 2000);
+		setTimeout(() => {
+		  this.spinner.hide();
+		}, 1000);
 	}
 
 	async zipMultipleZipFilesWithJsZipDelay(): Promise<void> {
 		try {
 			const mainZip = new JSZip();
 			this.zipProgress = 0;
-			const totalFiles = 20;
+			const totalFiles = 20 + 1; //plus 1 for compression process
 	
 			for (let i = 0; i < totalFiles; i++) {
 				const response = await this.getMockApiZipData();
@@ -49,11 +49,11 @@ export class AppComponent {
 				const zipData = await response.blob();
 				mainZip.file(filename, zipData);
 	
-				this.zipProgress = Math.round(((i + 1) / totalFiles) * 50);
+				this.zipProgress = Math.round(((i + 1) / totalFiles) * 100);
 			}
 	
 			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-				this.zipProgress = 50 + Math.round(metadata.percent / 2);
+				this.zipProgress += Math.round(metadata.percent / 100);
 			});
 	
 			this.downloadFile(zipBlob);
@@ -69,7 +69,7 @@ export class AppComponent {
 		try {
 			const files: { [key: string]: Uint8Array } = {};
 			this.zipProgress = 0;
-			const totalFiles = 20;
+			const totalFiles = 20 + 1; //plus 1 for compression process
 	
 			for (let i = 0; i < totalFiles; i++) {
 				const response = await this.getMockApiZipData();
@@ -79,7 +79,7 @@ export class AppComponent {
 				const zipData = new Uint8Array(await response.arrayBuffer());
 				files[filename] = zipData;
 	
-				this.zipProgress = Math.round(((i + 1) / totalFiles) * 50);
+				this.zipProgress = Math.round(((i + 1) / totalFiles) * 100);
 			}
 	
 			let compressedSize = 0;
@@ -99,7 +99,7 @@ export class AppComponent {
 					zipChunks.push(data);
 					compressedSize += data.length;
 	
-					this.zipProgress = 50 + Math.round((compressedSize / totalSize) * 50);
+					this.zipProgress += Math.round((compressedSize / totalSize) * 100);
 	
 					if (compressedSize >= totalSize) {
 						resolve(new Blob(zipChunks, { type: "application/zip" }));
