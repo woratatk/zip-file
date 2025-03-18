@@ -8,7 +8,8 @@
     ></ngx-spinner>
     <div class="zip-section m-4">
       <progressbar [value]="zipProgress" [striped]="true" [animate]="true" type="success">{{ zipProgress }}%</progressbar>
-      <button type="button" class="btn btn-primary mt-2" (click)="zipMultipleZipFilesWithJsZipDelay()">Start Zipping</button>
+      <button type="button" class="btn btn-primary mt-2" (click)="zipMultipleZipFilesWithJsZipDelay()">Start Zipping JSZip</button>
+      <button type="button" class="btn btn-primary mt-2" (click)="zipMultipleZipFilesWithFflateDelay()">Start Zipping Fflate</button>
     </div>
   </div>
 </main>
