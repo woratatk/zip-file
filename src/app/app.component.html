@@ -19,6 +19,25 @@
         autocomplete="off">
     </div>
     <div class="zip-section m-4">
+      <circle-progress
+        [percent]="zipProgress"
+        [animation]="true"
+        [startFromZero]="false"
+        [showInnerStroke]="true"
+      ></circle-progress>
+      <div class="progress-wrapper">
+        <div class="current" [ngStyle]="getOverlayStyle()">{{zipProgress}}%</div>
+        <round-progress
+        [current]="zipProgress"
+        [max]="100"
+        [stroke]="16"
+        [radius]="100"
+        [color]="'#78C000'"
+        [semi]="false"
+        [rounded]="true"
+        [clockwise]="true"
+      />
+      </div>
       <progressbar [value]="zipProgress" [striped]="true" [animate]="true" [max]="100" [type]="progressType">{{ zipProgress }}%</progressbar>
       <button type="button" class="btn btn-primary m-2" (click)="zipMultipleZipFilesWithJsZip()" [disabled]="isProcessing">Start Zipping JSZip</button>
       <button type="button" class="btn btn-warning m-2" (click)="zipMultipleZipFilesWithJsZipParallel()" [disabled]="isProcessing">Start Zipping JSZip Parallel</button>

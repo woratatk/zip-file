@@ -6,6 +6,8 @@ import { ProgressbarModule, ProgressbarType } from 'ngx-bootstrap/progressbar';
 import { NgxSpinnerModule, NgxSpinnerService } from "ngx-spinner";
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CircleProgressOptions, NgCircleProgressModule } from 'ng-circle-progress';
+import {RoundProgressComponent} from 'angular-svg-round-progressbar';
 
 
 @Component({
@@ -16,7 +18,23 @@ import { FormsModule } from '@angular/forms';
         ProgressbarModule,
 		NgxSpinnerModule,
 		CommonModule,
-		FormsModule
+		FormsModule,
+		NgCircleProgressModule,
+		RoundProgressComponent
+	],
+	providers: [
+		{
+		  provide: CircleProgressOptions,
+		  useValue: {
+			radius: 70,
+			maxPercent: 100,
+			outerStrokeWidth: 10,
+			showSubtitle: false,
+			outerStrokeColor: "#0d6efd",
+			innerStrokeColor: "#e6eef0",
+			animationDuration: 300,
+		  }
+		}
 	],
 	schemas: [CUSTOM_ELEMENTS_SCHEMA],
 	templateUrl: './app.component.html',
@@ -27,15 +45,17 @@ export class AppComponent {
 	progressType: ProgressbarType = 'success';
 	isProcessing: boolean = false;
 	fileCountInput: number = 1;
+	semicircle: boolean = false;
+	radius: number = 100;
 
 	constructor(private readonly spinner: NgxSpinnerService) {}
 
 	ngOnInit() {
-		this.spinner.show();
+		// this.spinner.show();
 		
-		setTimeout(() => {
-		  this.spinner.hide();
-		}, 1000);
+		// setTimeout(() => {
+		//   this.spinner.hide();
+		// }, 1000);
 	}
 
 	onKeyUp(event: KeyboardEvent) {
@@ -45,6 +65,19 @@ export class AppComponent {
 		} else if (inputValue < 1) {
 		  this.fileCountInput = 1;
 		}
+	}
+
+	getOverlayStyle() {
+		const isSemi = this.semicircle;
+		const transform = (isSemi ? '' : 'translateY(-50%) ') + 'translateX(-50%)';
+	
+		return {
+		  top: isSemi ? 'auto' : '50%',
+		  bottom: isSemi ? '5%' : 'auto',
+		  left: '50%',
+		  transform,
+		  fontSize: this.radius / 3.5 + 'px',
+		};
 	}
 
 	clear() {
