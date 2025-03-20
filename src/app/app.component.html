@@ -7,9 +7,13 @@
       type="ball-spin-clockwise"
     ></ngx-spinner>
     <div class="zip-section m-4">
-      <progressbar [value]="zipProgress" [striped]="false" [animate]="true" [max]="100" type="success">{{ zipProgress }}%</progressbar>
-      <button type="button" class="btn btn-primary mt-2" (click)="zipMultipleZipFilesWithJsZipDelayParallel()">Start Zipping JSZip</button>
-      <button type="button" class="btn btn-success mt-2" (click)="zipMultipleZipFilesWithFflateDelay()">Start Zipping Fflate</button>
+      <progressbar [value]="zipProgress" [striped]="true" [animate]="true" [max]="100" [type]="progressType">{{ zipProgress }}%</progressbar>
+      <button type="button" class="btn btn-primary m-2" (click)="zipMultipleZipFilesWithJsZip()" [disabled]="isProcessing">Start Zipping JSZip</button>
+      <button type="button" class="btn btn-warning m-2" (click)="zipMultipleZipFilesWithJsZipParallel()" [disabled]="isProcessing">Start Zipping JSZip Parallel</button>
+      <button type="button" class="btn btn-danger m-2" (click)="zipMultipleZipFilesWithJsZipFail()" [disabled]="isProcessing">Start Zipping JSZip Fail</button>
+      <button type="button" class="btn btn-info m-2" (click)="zipMultipleZipFilesWithJsZipParallelAllowFail()" [disabled]="isProcessing">Start Zipping JSZip Parallel Fail</button>
+      <button type="button" class="btn btn-success m-2" (click)="zipMultipleZipFilesWithFflateDelay()" [disabled]="isProcessing">Start Zipping Fflate</button>
+      <button type="button" class="btn btn-secondary m-2" (click)="clear()">Clear</button>
     </div>
   </div>
 </main>
