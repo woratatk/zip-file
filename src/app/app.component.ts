@@ -38,7 +38,7 @@ export class AppComponent {
 		try {
 			const mainZip = new JSZip();
 			this.zipProgress = 0;
-			const totalFiles = 20 + 1; //plus 1 for compression process
+			const totalFiles = 100 + 1; // +1 for compression step
 	
 			for (let i = 0; i < totalFiles; i++) {
 				const response = await this.getMockApiZipData();
@@ -62,6 +62,88 @@ export class AppComponent {
 	
 		} catch (error) {
 			console.error(error);
+		}
+	}
+
+	async zipMultipleZipFilesWithJsZipDelayParallel(): Promise<void> {
+		try {
+			const mainZip = new JSZip();
+			this.zipProgress = 0;
+			const FILE_COUNT = 100;
+			const TOTAL_STEPS = FILE_COUNT + 1; // +1 for compression step
+	
+			const responses = await Promise.all(
+				Array.from({ length: FILE_COUNT }, () => this.getMockApiZipData())
+			);
+	
+			for (let i = 0; i < FILE_COUNT; i++) {
+				const response = responses[i];
+
+				const contentDisposition = response.headers.get("Content-Disposition");
+				const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
+	
+				const zipData = await response.blob();
+				mainZip.file(filename, zipData);
+	
+				this.zipProgress = Math.round(((i + 1) / TOTAL_STEPS) * 100);
+			}
+	
+			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
+				this.zipProgress = Math.round((FILE_COUNT / TOTAL_STEPS) * 100 + (metadata.percent / TOTAL_STEPS));
+			});
+	
+			this.downloadFile(zipBlob);
+			this.zipProgress = 100;
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
+	async zipMultipleZipFilesWithJsZipDelayAllowFail(): Promise<void> {
+		try {
+			const mainZip = new JSZip();
+			this.zipProgress = 0;
+			const FILE_COUNT = 20;
+			const TOTAL_STEPS = FILE_COUNT + 1; // +1 for compression step
+	
+			// Fetch all files in parallel and allow some to fail
+			const responses = await Promise.allSettled(
+				Array.from({ length: FILE_COUNT }, () => this.getMockApiZipData())
+			);
+	
+			let successfulFiles = 0;
+	
+			for (let i = 0; i < FILE_COUNT; i++) {
+				const result = responses[i];
+	
+				if (result.status === "fulfilled") {
+					const response = result.value;
+
+					const contentDisposition = response.headers.get("Content-Disposition");
+					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
+	
+					const zipData = await response.blob();
+					mainZip.file(filename, zipData);
+					successfulFiles++;
+				} else {
+					console.warn(`Failed to fetch file ${i + 1}:`, result.reason);
+				}
+	
+				this.zipProgress = Math.round(((i + 1) / TOTAL_STEPS) * 100);
+			}
+	
+			if (successfulFiles === 0) {
+				throw new Error("All file downloads failed. Cannot create ZIP.");
+			}
+	
+			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
+				this.zipProgress = Math.round((FILE_COUNT / TOTAL_STEPS) * 100 + (metadata.percent / TOTAL_STEPS));
+			});
+	
+			this.downloadFile(zipBlob);
+			this.zipProgress = 100;
+		} catch (error) {
+			console.error("ZIP creation failed:", error);
 		}
 	}
 	
@@ -116,8 +198,8 @@ export class AppComponent {
 	}
 
 	private extractFilenameFromContentDisposition(contentDisposition: string): string {
-		const match = contentDisposition.match(/filename[^;=\n]*=(?:['"]?)([^'";\n]+)(?:['"]?)/);
-		return match ? match[1] : "default.zip";
+		const match = contentDisposition?.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+		return match ? decodeURIComponent(match[1].replace(/["']/g, '')) : "default.zip";
 	}
 	
 	private async getMockApiZipData(): Promise<Response> {
@@ -137,9 +219,11 @@ export class AppComponent {
 
 	private downloadFile(zipBlob: Blob) {
 		const link = document.createElement("a");
-		link.href = URL.createObjectURL(zipBlob);
+		const objectUrl = URL.createObjectURL(zipBlob);
+		link.href = objectUrl;
 		link.download = "Main_Zip.zip";
 		link.click();
+		URL.revokeObjectURL(objectUrl);
 	}
 	
 }
