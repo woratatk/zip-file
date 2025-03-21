@@ -30,7 +30,6 @@ import {RoundProgressComponent} from 'angular-svg-round-progressbar';
 			maxPercent: 100,
 			outerStrokeWidth: 10,
 			showSubtitle: false,
-			outerStrokeColor: "#0d6efd",
 			innerStrokeColor: "#e6eef0",
 			animationDuration: 300,
 		  }
@@ -47,6 +46,7 @@ export class AppComponent {
 	fileCountInput: number = 1;
 	semicircle: boolean = false;
 	radius: number = 100;
+	progressBarColor: string = '#0d6efd';
 
 	constructor(private readonly spinner: NgxSpinnerService) {}
 
@@ -67,30 +67,16 @@ export class AppComponent {
 		}
 	}
 
-	getOverlayStyle() {
-		const isSemi = this.semicircle;
-		const transform = (isSemi ? '' : 'translateY(-50%) ') + 'translateX(-50%)';
-	
-		return {
-		  top: isSemi ? 'auto' : '50%',
-		  bottom: isSemi ? '5%' : 'auto',
-		  left: '50%',
-		  transform,
-		  fontSize: this.radius / 3.5 + 'px',
-		};
-	}
-
 	clear() {
 		this.zipProgress = 0;
 		this.progressType = 'success';
+		this.progressBarColor = '#0d6efd';
 		this.isProcessing = false;
 	}
 	  
 	clearAll() {
 		this.fileCountInput = 1;
-		this.zipProgress = 0;
-		this.progressType = 'success';
-		this.isProcessing = false;
+		this.clear();
 	}
 
 	async zipMultipleZipFilesWithJsZip(): Promise<void> {
@@ -161,6 +147,7 @@ export class AppComponent {
 						this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
 					} catch (error) {
 						this.progressType = 'danger';
+						this.progressBarColor = '#dc3545';
 						console.error(`Error with file ${i + 1}:`, error);
 						return;
 					}
@@ -176,6 +163,59 @@ export class AppComponent {
 		} catch (error) {
 			this.progressType = 'danger';
 		  	console.error('Unexpected error:', error);
+		} finally {
+			this.isProcessing = false;
+		}
+	}
+
+	async zipMultipleZipFilesWithJsZipFailWithRetry(): Promise<void> {
+		this.clear();
+		this.isProcessing = true;
+		this.zipProgress = 0;
+		const maxRetries = 2;
+		const retryDelay = 1000;
+	
+		try {
+			if (this.fileCountInput === 1) {
+				await this.downloadSingleFile(true);
+				return;
+			}
+	
+			const mainZip = new JSZip();
+			const totalSteps = this.fileCountInput + 1;
+	
+			for (let i = 0; i < this.fileCountInput; i++) {
+				try {
+					const response = await this.attemptRequestWithRetry(() => this.getMockApiZipData(true), maxRetries, retryDelay);
+					
+					if (!response.ok) {
+						throw new Error(`Failed to fetch file ${i + 1}`);
+					}
+	
+					const contentDisposition = response.headers.get("Content-Disposition");
+					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
+	
+					const zipData = await response.blob();
+					mainZip.file(filename, zipData);
+	
+					this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
+				} catch (error) {
+					this.progressType = 'danger';
+					this.progressBarColor = '#dc3545';
+					console.error(`Error with file ${i + 1} after retries:`, error);
+					return;
+				}
+			}
+	
+			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
+				this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
+			});
+	
+			this.downloadFile(zipBlob);
+			this.zipProgress = 100;
+		} catch (error) {
+			this.progressType = 'danger';
+			console.error('Unexpected error:', error);
 		} finally {
 			this.isProcessing = false;
 		}
@@ -258,6 +298,7 @@ export class AppComponent {
 						successfulFiles++;
 					} else {
 						this.progressType = 'danger';
+						this.progressBarColor = '#dc3545';
 						console.error(`Failed to fetch file ${i + 1}:`, result.reason);
 						return;
 					}
@@ -276,6 +317,70 @@ export class AppComponent {
 				this.downloadFile(zipBlob);
 				this.zipProgress = 100;
 			}
+		} catch (error) {
+			this.progressType = 'danger';
+			console.error("ZIP creation failed:", error);
+		} finally {
+			this.isProcessing = false;
+		}
+	}
+
+	async zipMultipleZipFilesWithJsZipParallelAllowFailWithRetry(): Promise<void> {
+		this.clear();
+		this.isProcessing = true;
+		this.zipProgress = 0;
+	
+		const maxRetries = 2;
+		const retryDelay = 1000;
+		
+		try {
+			if (this.fileCountInput === 1) {
+				await this.downloadSingleFile(true);
+				return;
+			}
+	
+			const mainZip = new JSZip();
+			const totalSteps = this.fileCountInput + 1;
+	
+			const downloadPromises = Array.from({ length: this.fileCountInput }, (_, i) => 
+				this.attemptRequestWithRetry(() => this.getMockApiZipData(true), maxRetries, retryDelay)
+			);
+	
+			const responses = await Promise.allSettled(downloadPromises);
+	
+			let successfulFiles = 0;
+	
+			for (let i = 0; i < this.fileCountInput; i++) {
+				const result = responses[i];
+	
+				if (result.status === "fulfilled") {
+					const response = result.value;
+					const contentDisposition = response.headers.get("Content-Disposition");
+					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
+	
+					const zipData = await response.blob();
+					mainZip.file(filename, zipData);
+					successfulFiles++;
+				} else {
+					this.progressType = 'danger';
+					this.progressBarColor = '#dc3545';
+					console.warn(`Failed to fetch file ${i + 1} after ${maxRetries} retries:`, result.reason);
+					return;
+				}
+	
+				this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
+			}
+	
+			if (successfulFiles === 0) {
+				throw new Error("All file downloads failed. Cannot create ZIP.");
+			}
+	
+			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
+				this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
+			});
+	
+			this.downloadFile(zipBlob);
+			this.zipProgress = 100;
 		} catch (error) {
 			this.progressType = 'danger';
 			console.error("ZIP creation failed:", error);
@@ -384,6 +489,27 @@ export class AppComponent {
 			throw error;
 		}
 	}
+
+	private async attemptRequestWithRetry(requestFn: () => Promise<Response>, maxRetries: number, delay: number): Promise<Response> {
+		let attempt = 0;
+		while (attempt < maxRetries) {			
+			try {
+				const response = await requestFn();
+				if (response.ok) {
+					return response;
+				}
+				throw new Error(`Request failed with status ${response.status}`);
+			} catch (error) {
+				attempt++;
+				if (attempt >= maxRetries) {
+					throw error;
+				}
+				console.log(`Retrying request (${attempt}/${maxRetries})...`);
+				await new Promise(res => setTimeout(res, delay * attempt));
+			}
+		}
+		throw new Error("Max retries exceeded");
+	}
 	  
 	private async simulateApiCall(): Promise<void> {
 		await new Promise(resolve => setTimeout(resolve, Math.random() * 1000));
@@ -406,6 +532,19 @@ export class AppComponent {
 		link.download = fileName;
 		link.click();
 		URL.revokeObjectURL(objectUrl);
-	}	  
+	}
+
+	getOverlayStyle() {
+		const isSemi = this.semicircle;
+		const transform = (isSemi ? '' : 'translateY(-50%) ') + 'translateX(-50%)';
+	
+		return {
+		  top: isSemi ? 'auto' : '50%',
+		  bottom: isSemi ? '5%' : 'auto',
+		  left: '50%',
+		  transform,
+		  fontSize: this.radius / 3.5 + 'px',
+		};
+	}
 
 }

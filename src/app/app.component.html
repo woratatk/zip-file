@@ -14,7 +14,7 @@
         [(ngModel)]="fileCountInput" 
         (keyup)="onKeyUp($event)"
         [min]="1" 
-        [max]="100" 
+        [max]="100"
         [ngModelOptions]="{standalone: true}" 
         autocomplete="off">
     </div>
@@ -24,6 +24,7 @@
         [animation]="true"
         [startFromZero]="false"
         [showInnerStroke]="true"
+        [outerStrokeColor]="progressBarColor"
       ></circle-progress>
       <div class="progress-wrapper">
         <div class="current" [ngStyle]="getOverlayStyle()">{{zipProgress}}%</div>
@@ -32,7 +33,7 @@
         [max]="100"
         [stroke]="16"
         [radius]="100"
-        [color]="'#78C000'"
+        [color]="progressBarColor"
         [semi]="false"
         [rounded]="true"
         [clockwise]="true"
@@ -42,7 +43,9 @@
       <button type="button" class="btn btn-primary m-2" (click)="zipMultipleZipFilesWithJsZip()" [disabled]="isProcessing">Start Zipping JSZip</button>
       <button type="button" class="btn btn-warning m-2" (click)="zipMultipleZipFilesWithJsZipParallel()" [disabled]="isProcessing">Start Zipping JSZip Parallel</button>
       <button type="button" class="btn btn-danger m-2" (click)="zipMultipleZipFilesWithJsZipFail()" [disabled]="isProcessing">Start Zipping JSZip Fail</button>
+      <button type="button" class="btn btn-danger m-2" (click)="zipMultipleZipFilesWithJsZipFailWithRetry()" [disabled]="isProcessing">Start Zipping JSZip Fail Retry</button>
       <button type="button" class="btn btn-info m-2" (click)="zipMultipleZipFilesWithJsZipParallelAllowFail()" [disabled]="isProcessing">Start Zipping JSZip Parallel Fail</button>
+      <button type="button" class="btn btn-info m-2" (click)="zipMultipleZipFilesWithJsZipParallelAllowFailWithRetry()" [disabled]="isProcessing">Start Zipping JSZip Parallel Fail Retry</button>
       <button type="button" class="btn btn-success m-2" (click)="zipMultipleZipFilesWithFflateDelay()" [disabled]="isProcessing">Start Zipping Fflate</button>
       <button type="button" class="btn btn-secondary m-2" (click)="clearAll()" [disabled]="isProcessing">Clear All</button>
     </div>
