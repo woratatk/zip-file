@@ -8,8 +8,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CircleProgressOptions, NgCircleProgressModule } from 'ng-circle-progress';
 import {RoundProgressComponent} from 'angular-svg-round-progressbar';
-import { lastValueFrom, Observable, of, throwError, timer } from 'rxjs';
-import { delay, mergeMap, retry } from 'rxjs/operators';
+import { EMPTY, from, lastValueFrom, Observable, of, throwError, timer } from 'rxjs';
+import { catchError, defaultIfEmpty, delay, map, mergeMap, retry } from 'rxjs/operators';
 import { ModalDirective } from 'ngx-bootstrap/modal';
 
 
@@ -52,9 +52,8 @@ export class AppComponent {
 	radius: number = 100;
 	progressBarColor: string = '#0d6efd';
 	errorChance: number = 0.2;
-	maxRetries: number = 2;
+	maxRetries: number = 1;
 	allowFailure: boolean = true;
-	retry: boolean = true;
 
 	contractIdErrorList: number[] = [];
 
@@ -83,12 +82,11 @@ export class AppComponent {
 		this.progressType = 'success';
 		this.progressBarColor = '#0d6efd';
 		this.isProcessing = false;
+		this.contractIdErrorList = [];
 	}
 	  
 	clearAll() {
 		this.fileCountInput = 1;
-		this.allowFailure = false;
-		this.retry = false;
 		this.clear();
 	}
 
@@ -97,12 +95,11 @@ export class AppComponent {
 		this.isProcessing = true;
 		this.zipProgress = 0;
 
-		const retryCount = this.retry ? this.maxRetries : 0;
 		const retryDelayMs = 1000;
 		
 		try {
 			if (this.fileCountInput === 1) {
-				await this.downloadSingleFile(this.allowFailure);
+				await this.downloadSingleFile();
 				return;
 			}
 			
@@ -112,11 +109,11 @@ export class AppComponent {
 	
 			const fetchFile = async (index: number) => {
 				try {					
-					const response = await lastValueFrom(this.getMockApiZipDataObservable(this.allowFailure).pipe(
+					const response = await lastValueFrom(this.getMockApiZipDataObservable().pipe(
 						retry({
-							count: retryCount,
+							count: this.maxRetries,
 							delay: (error, count) => {
-								console.warn(`Retrying request (${count}/${retryCount}) due to error:`, error.message);
+								console.warn(`Retrying request (${count}/${this.maxRetries}) due to error:`, error.message);
 								return timer(count * retryDelayMs);
 							}
 						})
@@ -134,11 +131,10 @@ export class AppComponent {
 				} catch (error) {
 					console.warn(`Failed to fetch file ${index + 1}:`, error);
 					this.contractIdErrorList.push(index);
-
 					if (!this.allowFailure) throw error;
 				}
 			};
-	
+
 			for (let i = 0; i < this.fileCountInput; i++) {
 				await fetchFile(i);
 				this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
@@ -158,6 +154,76 @@ export class AppComponent {
 			console.error("ZIP creation failed:", error);
 		} finally {
 			this.isProcessing = false;
+		}
+	}
+
+	async mainZip2(): Promise<void> {
+		this.clear();
+		this.isProcessing = true;
+		this.zipProgress = 0;
+
+		const retryDelayMs = 1000;
+		
+		try {
+			if (this.fileCountInput === 1) {
+				await this.downloadSingleFile();
+				return;
+			}
+			
+			const mainZip = new JSZip();
+			const totalSteps = this.fileCountInput + 1; //+1 compression operation
+
+			const fetchFile$ = (index: number) => 
+				this.getMockApiZipDataObservable().pipe(
+					retry({
+						count: this.maxRetries,
+						delay: (error, count) => {
+							console.warn(`Retrying request (${count}/${this.maxRetries}) due to error:`, error.message);
+							return timer(count * retryDelayMs);
+						}
+					}),
+					catchError(error => {
+						console.warn(`Failed to fetch file ${index + 1}:`, error);
+						this.contractIdErrorList.push(index);
+						return this.allowFailure ? EMPTY : throwError(() => error);
+					}),
+					mergeMap(response => {
+						if (!response?.ok) return EMPTY;
+						return from(response.blob()).pipe(
+							map(blob => ({ filename: this.getFilenameFromResponse(response, `file_${index + 1}.zip`), blob }))
+						);
+					}),
+					defaultIfEmpty(null)
+				);
+
+			await this.processFilesSequentially(fetchFile$, mainZip, totalSteps);
+
+			if (this.contractIdErrorList.length === this.fileCountInput) {
+				throw new Error("All file downloads failed. Cannot create ZIP.");
+			}
+	
+			const zipBlob = await mainZip.generateAsync({ type: "blob" }, metadata => {
+				this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
+			});
+	
+			this.downloadFile(zipBlob);
+			this.zipProgress = 100;
+			this.isModalShown = this.contractIdErrorList.length !== 0;
+		} catch (error) {
+			this.progressType = 'danger';
+			console.error("ZIP creation failed:", error);
+		} finally {
+			this.isProcessing = false;
+		}
+	}
+
+	private async processFilesSequentially(fetchFile$: (index: number) => Observable<{ filename: string; blob: Blob } | null>, mainZip: JSZip, totalSteps: number): Promise<void> {
+		for (let i = 0; i < this.fileCountInput; i++) {
+			const fileData = await lastValueFrom(fetchFile$(i));
+			if (fileData) {
+				mainZip.file(fileData.filename, fileData.blob, { compression: "DEFLATE", compressionOptions: { level: 6 } });
+			}
+			this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
 		}
 	}
 	
@@ -220,8 +286,8 @@ export class AppComponent {
 		}
 	}
 
-	private async downloadSingleFile(isFail: boolean = false) {
-		const response = await lastValueFrom(this.getMockApiZipDataObservable(isFail));
+	private async downloadSingleFile() {
+		const response = await lastValueFrom(this.getMockApiZipDataObservable());
 		
 		if (!response.ok) {
 			throw new Error(`Failed to fetch file.`);
@@ -239,15 +305,16 @@ export class AppComponent {
 	}
 
 	private extractFilenameFromContentDisposition(contentDisposition: string): string {
-		const match = contentDisposition?.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+		const regex = /filename\*?=(?:UTF-8'')?([^;]+)/i;
+		const match = regex.exec(contentDisposition ?? '');
 		return match ? decodeURIComponent(match[1].replace(/["']/g, '')) : "default.zip";
-	}
+	}	
 
-	private getMockApiZipDataObservable(isFail: boolean = false): Observable<Response> {
-		return of(null).pipe(delay(Math.random() * 1000)).pipe(
+	private getMockApiZipDataObservable(): Observable<Response> {
+		return of(null).pipe(delay(Math.random() * 500)).pipe(
 			mergeMap(() => {
-				if (isFail && Math.random() < this.errorChance) {
-					return throwError(() => new Error('Failed to fetch file: 500 Internal Server Error'));
+				if (Math.random() < this.errorChance) {
+					return throwError(() => new Error('Failed to fetch file from getMockApiZipDataObservable: 500 Internal Server Error'));
 				}
 
 				const zip = new JSZip();

@@ -10,29 +10,24 @@
     <div class="input-section m-4">
       <h1>Error Chance</h1>
       <input id="errorChanceInput" type="number" [(ngModel)]="errorChance" [min]="0" [max]="1" step="0.01"
-        [ngModelOptions]="{standalone: true}" [disabled]="!allowFailure" autocomplete="off">
+        [ngModelOptions]="{standalone: true}" autocomplete="off">
     </div>
 
     <div class="input-section m-4">
       <h1>Max retry</h1>
       <input id="maxRetryInput" type="number" [(ngModel)]="maxRetries" [min]="1" [max]="10" step="1"
-        [ngModelOptions]="{standalone: true}" [disabled]="!retry" autocomplete="off">
+        [ngModelOptions]="{standalone: true}" autocomplete="off">
     </div>
 
     <div class="m-4">
       <h2>Options</h2>
-
       <div>
         <label>
-          <input type="checkbox" [(ngModel)]="allowFailure"> Allow Failure
-        </label>
-      </div>
-      <div>
-        <label>
-          <input type="checkbox" [(ngModel)]="retry"> Retry
+          <input type="checkbox" [(ngModel)]="allowFailure"> Allow Failure (continue to download)
         </label>
       </div>
     </div>
+
     <div class="zip-section m-4">
       <circle-progress [percent]="zipProgress" [animation]="true" [startFromZero]="false" [showInnerStroke]="true"
         [outerStrokeColor]="progressBarColor"></circle-progress>
