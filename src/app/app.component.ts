@@ -126,17 +126,16 @@ export class AppComponent {
 						throw new Error(`Failed to fetch file ${index + 1}`);
 					}
 					
-					const contentDisposition = response.headers.get("Content-Disposition");
-					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${index + 1}.zip`;
+					const filename = this.getFilenameFromResponse(response, `file_${index + 1}.zip`);
 
 					const zipData = await response.blob();
 					mainZip.file(filename, zipData, { compression: "DEFLATE", compressionOptions: { level: 6 } });
 					successfulFiles++;
 				} catch (error) {
+					console.warn(`Failed to fetch file ${index + 1}:`, error);
 					this.contractIdErrorList.push(index);
 
 					if (!this.allowFailure) throw error;
-					console.warn(`Failed to fetch file ${index + 1}:`, error);
 				}
 			};
 	
@@ -177,8 +176,7 @@ export class AppComponent {
 		
 				for (let i = 0; i < this.fileCountInput; i++) {
 					const response = await lastValueFrom(this.getMockApiZipDataObservable());
-					const contentDisposition = response.headers.get("Content-Disposition");
-					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
+					const filename = this.getFilenameFromResponse(response, `file_${i + 1}.zip`);
 		
 					const zipData = new Uint8Array(await response.arrayBuffer());
 					files[filename] = zipData;
