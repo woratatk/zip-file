@@ -12,6 +12,10 @@ import { EMPTY, from, lastValueFrom, Observable, of, throwError, timer } from 'r
 import { catchError, defaultIfEmpty, delay, map, mergeMap, retry } from 'rxjs/operators';
 import { ModalDirective } from 'ngx-bootstrap/modal';
 
+type FileStruct = {
+	filename: string;
+	data: Blob;
+}
 
 @Component({
 	standalone: true,
@@ -105,73 +109,6 @@ export class AppComponent {
 			
 			const mainZip = new JSZip();
 			const totalSteps = this.fileCountInput + 1; //+1 compression operation
-			let successfulFiles = 0;
-	
-			const fetchFile = async (index: number) => {
-				try {					
-					const response = await lastValueFrom(this.getMockApiZipDataObservable().pipe(
-						retry({
-							count: this.maxRetries,
-							delay: (error, count) => {
-								console.warn(`Retrying request (${count}/${this.maxRetries}) due to error:`, error.message);
-								return timer(count * retryDelayMs);
-							}
-						})
-					));
-					
-					if (!response.ok) {
-						throw new Error(`Failed to fetch file ${index + 1}`);
-					}
-					
-					const filename = this.getFilenameFromResponse(response, `file_${index + 1}.zip`);
-
-					const zipData = await response.blob();
-					mainZip.file(filename, zipData, { compression: "DEFLATE", compressionOptions: { level: 6 } });
-					successfulFiles++;
-				} catch (error) {
-					console.warn(`Failed to fetch file ${index + 1}:`, error);
-					this.contractIdErrorList.push(index);
-					if (!this.allowFailure) throw error;
-				}
-			};
-
-			for (let i = 0; i < this.fileCountInput; i++) {
-				await fetchFile(i);
-				this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
-			}
-	
-			if (successfulFiles === 0) throw new Error("All file downloads failed. Cannot create ZIP.");
-	
-			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-				this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
-			});
-	
-			this.downloadFile(zipBlob);
-			this.zipProgress = 100;
-			this.isModalShown = this.contractIdErrorList.length !== 0;
-		} catch (error) {
-			this.progressType = 'danger';
-			console.error("ZIP creation failed:", error);
-		} finally {
-			this.isProcessing = false;
-		}
-	}
-
-	async mainZip2(): Promise<void> {
-		this.clear();
-		this.isProcessing = true;
-		this.zipProgress = 0;
-
-		const retryDelayMs = 1000;
-		
-		try {
-			if (this.fileCountInput === 1) {
-				await this.downloadSingleFile();
-				return;
-			}
-			
-			const mainZip = new JSZip();
-			const totalSteps = this.fileCountInput + 1; //+1 compression operation
 
 			const fetchFile$ = (index: number) => 
 				this.getMockApiZipDataObservable().pipe(
@@ -190,7 +127,7 @@ export class AppComponent {
 					mergeMap(response => {
 						if (!response?.ok) return EMPTY;
 						return from(response.blob()).pipe(
-							map(blob => ({ filename: this.getFilenameFromResponse(response, `file_${index + 1}.zip`), blob }))
+							map(blob => ({ filename: this.getFilenameFromResponse(response, `file_${index + 1}.zip`), data: blob } as FileStruct))
 						);
 					}),
 					defaultIfEmpty(null)
@@ -211,19 +148,20 @@ export class AppComponent {
 			this.isModalShown = this.contractIdErrorList.length !== 0;
 		} catch (error) {
 			this.progressType = 'danger';
+			this.progressBarColor = '#dc3545';
 			console.error("ZIP creation failed:", error);
 		} finally {
 			this.isProcessing = false;
 		}
 	}
 
-	private async processFilesSequentially(fetchFile$: (index: number) => Observable<{ filename: string; blob: Blob } | null>, mainZip: JSZip, totalSteps: number): Promise<void> {
+	private async processFilesSequentially(fetchFile$: (index: number) => Observable<FileStruct | null>, mainZip: JSZip, totalSteps: number): Promise<void> {
 		for (let i = 0; i < this.fileCountInput; i++) {
 			const fileData = await lastValueFrom(fetchFile$(i));
 			if (fileData) {
-				mainZip.file(fileData.filename, fileData.blob, { compression: "DEFLATE", compressionOptions: { level: 6 } });
+				mainZip.file(fileData.filename, fileData.data, { compression: "DEFLATE", compressionOptions: { level: 6 } });
+				this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
 			}
-			this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
 		}
 	}
 	
