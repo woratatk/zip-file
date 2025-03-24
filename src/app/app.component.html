@@ -1,53 +1,78 @@
 <main class="main">
   <div class="content">
-    <ngx-spinner 
-      bdColor="rgba(0, 0, 0, 0.8)" 
-      size="large" 
-      color="white" 
-      type="ball-spin-clockwise"
-    ></ngx-spinner>
-    <div class="zip-section m-4">
-      <p>File Count</p>
-      <input 
-        id="fileCountInput" 
-        type="number" 
-        [(ngModel)]="fileCountInput" 
-        (keyup)="onKeyUp($event)"
-        [min]="1" 
-        [max]="100"
-        [ngModelOptions]="{standalone: true}" 
-        autocomplete="off">
+    <ngx-spinner bdColor="rgba(0, 0, 0, 0.8)" size="large" color="white" type="ball-spin-clockwise"></ngx-spinner>
+    <div class="input-section m-4">
+      <h1>File Count</h1>
+      <input id="fileCountInput" type="number" [(ngModel)]="fileCountInput" (keyup)="onKeyUp($event)" [min]="1"
+        [max]="100" [ngModelOptions]="{standalone: true}" autocomplete="off">
+    </div>
+
+    <div class="input-section m-4">
+      <h1>Error Chance</h1>
+      <input id="errorChanceInput" type="number" [(ngModel)]="errorChance" [min]="0" [max]="1" step="0.01"
+        [ngModelOptions]="{standalone: true}" [disabled]="!allowFailure" autocomplete="off">
+    </div>
+
+    <div class="input-section m-4">
+      <h1>Max retry</h1>
+      <input id="maxRetryInput" type="number" [(ngModel)]="maxRetries" [min]="1" [max]="10" step="1"
+        [ngModelOptions]="{standalone: true}" [disabled]="!retry" autocomplete="off">
+    </div>
+
+    <div class="m-4">
+      <h2>Options</h2>
+
+      <div>
+        <label>
+          <input type="checkbox" [(ngModel)]="allowFailure"> Allow Failure
+        </label>
+      </div>
+      <div>
+        <label>
+          <input type="checkbox" [(ngModel)]="retry"> Retry
+        </label>
+      </div>
     </div>
     <div class="zip-section m-4">
-      <circle-progress
-        [percent]="zipProgress"
-        [animation]="true"
-        [startFromZero]="false"
-        [showInnerStroke]="true"
-        [outerStrokeColor]="progressBarColor"
-      ></circle-progress>
+      <circle-progress [percent]="zipProgress" [animation]="true" [startFromZero]="false" [showInnerStroke]="true"
+        [outerStrokeColor]="progressBarColor"></circle-progress>
       <div class="progress-wrapper">
         <div class="current" [ngStyle]="getOverlayStyle()">{{zipProgress}}%</div>
-        <round-progress
-        [current]="zipProgress"
-        [max]="100"
-        [stroke]="16"
-        [radius]="100"
-        [color]="progressBarColor"
-        [semi]="false"
-        [rounded]="true"
-        [clockwise]="true"
-      />
+        <round-progress [current]="zipProgress" [max]="100" [stroke]="16" [radius]="100" [color]="progressBarColor"
+          [semi]="false" [rounded]="true" [clockwise]="true" />
       </div>
-      <progressbar [value]="zipProgress" [striped]="true" [animate]="true" [max]="100" [type]="progressType">{{ zipProgress }}%</progressbar>
-      <button type="button" class="btn btn-primary m-2" (click)="zipMultipleZipFilesWithJsZip()" [disabled]="isProcessing">Start Zipping JSZip</button>
-      <button type="button" class="btn btn-warning m-2" (click)="zipMultipleZipFilesWithJsZipParallel()" [disabled]="isProcessing">Start Zipping JSZip Parallel</button>
-      <button type="button" class="btn btn-danger m-2" (click)="zipMultipleZipFilesWithJsZipFail()" [disabled]="isProcessing">Start Zipping JSZip Fail</button>
-      <button type="button" class="btn btn-danger m-2" (click)="zipMultipleZipFilesWithJsZipFailWithRetry()" [disabled]="isProcessing">Start Zipping JSZip Fail Retry</button>
-      <button type="button" class="btn btn-info m-2" (click)="zipMultipleZipFilesWithJsZipParallelAllowFail()" [disabled]="isProcessing">Start Zipping JSZip Parallel Fail</button>
-      <button type="button" class="btn btn-info m-2" (click)="zipMultipleZipFilesWithJsZipParallelAllowFailWithRetry()" [disabled]="isProcessing">Start Zipping JSZip Parallel Fail Retry</button>
-      <button type="button" class="btn btn-success m-2" (click)="zipMultipleZipFilesWithFflateDelay()" [disabled]="isProcessing">Start Zipping Fflate</button>
-      <button type="button" class="btn btn-secondary m-2" (click)="clearAll()" [disabled]="isProcessing">Clear All</button>
+      <progressbar [value]="zipProgress" [striped]="true" [animate]="true" [max]="100" [type]="progressType">{{
+        zipProgress }}%</progressbar>
+      <button type="button" class="btn btn-primary m-2" (click)="mainZip()" [disabled]="isProcessing">Start Zipping
+        JSZip Main</button>
+      <button type="button" class="btn btn-secondary m-2" (click)="clearAll()" [disabled]="isProcessing">Clear
+        All</button>
+    </div>
+
+    <div *ngIf="isModalShown" [config]="{ show: true }" (onHidden)="onHidden()" bsModal #autoShownModal="bs-modal"
+      class="modal fade" tabindex="-1" aria-labelledby="dialog-auto-name">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h4 id="dialog-auto-name" class="modal-title pull-left">เกิดข้อผิดพลาด</h4>
+            <button type="button" class="btn-close close pull-right" aria-label="Close" (click)="hideModal()">
+              <span aria-hidden="true" class="visually-hidden">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="files-list" *ngFor="let file of contractIdErrorList;let i= index">
+              <div class="file-item d-flex">
+                <div class="file-info flex-grow-1">
+                    <div>ไม่สามารถดาวน์โหลดใบเสร็จเลขที่ {{ file + 1 }} ได้</div>
+                </div>
+            </div>
+            </div>
+          </div>
+          <div class="modal-footer m-auto border-0">
+            <button type="button" class="btn btn-light mx-2" (click)="hideModal();" [innerHtml]="'ตกลง'"></button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </main>

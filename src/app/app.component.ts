@@ -1,4 +1,4 @@
-import { Component, CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, ViewChild } from '@angular/core';
 import JSZip from 'jszip';
 import { zip, FlateError } from "fflate";
 import { RouterOutlet } from '@angular/router';
@@ -8,6 +8,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CircleProgressOptions, NgCircleProgressModule } from 'ng-circle-progress';
 import {RoundProgressComponent} from 'angular-svg-round-progressbar';
+import { lastValueFrom, Observable, of, throwError, timer } from 'rxjs';
+import { delay, mergeMap, retry } from 'rxjs/operators';
+import { ModalDirective } from 'ngx-bootstrap/modal';
 
 
 @Component({
@@ -20,7 +23,8 @@ import {RoundProgressComponent} from 'angular-svg-round-progressbar';
 		CommonModule,
 		FormsModule,
 		NgCircleProgressModule,
-		RoundProgressComponent
+		RoundProgressComponent,
+		ModalDirective
 	],
 	providers: [
 		{
@@ -47,23 +51,30 @@ export class AppComponent {
 	semicircle: boolean = false;
 	radius: number = 100;
 	progressBarColor: string = '#0d6efd';
+	errorChance: number = 0.2;
+	maxRetries: number = 2;
+	allowFailure: boolean = true;
+	retry: boolean = true;
+
+	contractIdErrorList: number[] = [];
+
+	@ViewChild('autoShownModal', { static: false }) autoShownModal?: ModalDirective;
+	isModalShown = false;
 
 	constructor(private readonly spinner: NgxSpinnerService) {}
 
 	ngOnInit() {
-		// this.spinner.show();
+		this.spinner.show();
 		
-		// setTimeout(() => {
-		//   this.spinner.hide();
-		// }, 1000);
+		setTimeout(() => {
+		  this.spinner.hide();
+		}, 300);
 	}
 
 	onKeyUp(event: KeyboardEvent) {
 		const inputValue = this.fileCountInput;
 		if (inputValue > 100) {
 		  this.fileCountInput = 100;
-		} else if (inputValue < 1) {
-		  this.fileCountInput = 1;
 		}
 	}
 
@@ -76,304 +87,65 @@ export class AppComponent {
 	  
 	clearAll() {
 		this.fileCountInput = 1;
+		this.allowFailure = false;
+		this.retry = false;
 		this.clear();
 	}
 
-	async zipMultipleZipFilesWithJsZip(): Promise<void> {
-		this.clear();
-
-		try {
-			this.isProcessing = true;
-			this.zipProgress = 0;
-
-			if (this.fileCountInput === 1) {
-				this.downloadSingleFile();
-			} else {
-				const mainZip = new JSZip();
-				const totalSteps = this.fileCountInput + 1;
-			
-				for (let i = 0; i < this.fileCountInput; i++) {
-					const response = await this.getMockApiZipData();
-					const filename = this.getFilenameFromResponse(response, `file_${i + 1}.zip`);
-
-					const zipData = await response.blob();
-					mainZip.file(filename, zipData);
-				
-					this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
-				}
-			
-				const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-					this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
-				});
-			
-				this.downloadFile(zipBlob);
-				this.zipProgress = 100;
-			}
-		} catch (error) {
-			this.progressType = 'danger';
-			console.error(error);
-		} finally {
-			this.isProcessing = false;
-		}
-	}
-
-	async zipMultipleZipFilesWithJsZipFail(): Promise<void> {
-		this.clear();
-
-		try {
-			this.isProcessing = true;
-			this.zipProgress = 0;
-
-			if (this.fileCountInput === 1) {
-				this.downloadSingleFile(true);
-			} else {
-				const mainZip = new JSZip();
-				const totalSteps = this.fileCountInput + 1;
-			
-				for (let i = 0; i < this.fileCountInput; i++) {
-					try {
-						const response = await this.getMockApiZipData(true);
-				
-						if (!response.ok) {
-							throw new Error(`Failed to fetch file ${i + 1}`);
-						}
-				
-						const contentDisposition = response.headers.get("Content-Disposition");
-						const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
-				
-						const zipData = await response.blob();
-						mainZip.file(filename, zipData);
-				
-						this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
-					} catch (error) {
-						this.progressType = 'danger';
-						this.progressBarColor = '#dc3545';
-						console.error(`Error with file ${i + 1}:`, error);
-						return;
-					}
-				}
-			
-				const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-					this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
-				});
-			
-				this.downloadFile(zipBlob);
-				this.zipProgress = 100;
-			}
-		} catch (error) {
-			this.progressType = 'danger';
-		  	console.error('Unexpected error:', error);
-		} finally {
-			this.isProcessing = false;
-		}
-	}
-
-	async zipMultipleZipFilesWithJsZipFailWithRetry(): Promise<void> {
+	async mainZip(): Promise<void> {
 		this.clear();
 		this.isProcessing = true;
 		this.zipProgress = 0;
-		const maxRetries = 2;
-		const retryDelay = 1000;
-	
+
+		const retryCount = this.retry ? this.maxRetries : 0;
+		const retryDelayMs = 1000;
+		
 		try {
 			if (this.fileCountInput === 1) {
-				await this.downloadSingleFile(true);
+				await this.downloadSingleFile(this.allowFailure);
 				return;
 			}
-	
+			
 			const mainZip = new JSZip();
-			const totalSteps = this.fileCountInput + 1;
-	
-			for (let i = 0; i < this.fileCountInput; i++) {
-				try {
-					const response = await this.attemptRequestWithRetry(() => this.getMockApiZipData(true), maxRetries, retryDelay);
-					
-					if (!response.ok) {
-						throw new Error(`Failed to fetch file ${i + 1}`);
-					}
-	
-					const contentDisposition = response.headers.get("Content-Disposition");
-					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
-	
-					const zipData = await response.blob();
-					mainZip.file(filename, zipData);
-	
-					this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
-				} catch (error) {
-					this.progressType = 'danger';
-					this.progressBarColor = '#dc3545';
-					console.error(`Error with file ${i + 1} after retries:`, error);
-					return;
-				}
-			}
-	
-			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-				this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
-			});
-	
-			this.downloadFile(zipBlob);
-			this.zipProgress = 100;
-		} catch (error) {
-			this.progressType = 'danger';
-			console.error('Unexpected error:', error);
-		} finally {
-			this.isProcessing = false;
-		}
-	}
-
-	async zipMultipleZipFilesWithJsZipParallel(): Promise<void> {
-		this.clear();
-
-		try {
-			this.isProcessing = true;
-			this.zipProgress = 0;
-
-			if (this.fileCountInput === 1) {
-				this.downloadSingleFile();
-			} else {
-				const mainZip = new JSZip();
-				const totalSteps = this.fileCountInput + 1;
-		
-				const responses = await Promise.all(
-					Array.from({ length: this.fileCountInput }, () => this.getMockApiZipData())
-				);
-		
-				for (let i = 0; i < this.fileCountInput; i++) {
-					const response = responses[i];
-	
-					const contentDisposition = response.headers.get("Content-Disposition");
-					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
-		
-					const zipData = await response.blob();
-					mainZip.file(filename, zipData);
-		
-					this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
-				}
-		
-				const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-					this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
-				});
-		
-				this.downloadFile(zipBlob);
-				this.zipProgress = 100;
-			}
-		} catch (error) {
-			this.progressType = 'danger';
-			console.error(error);
-		} finally {
-			this.isProcessing = false;
-		}
-	}
-
-	async zipMultipleZipFilesWithJsZipParallelAllowFail(): Promise<void> {
-		this.clear();
-
-		try {
-			this.isProcessing = true;
-			this.zipProgress = 0;
-
-			if (this.fileCountInput === 1) {
-				this.downloadSingleFile(true);
-			} else {
-				const mainZip = new JSZip();
-				const totalSteps = this.fileCountInput + 1;
-		
-				const responses = await Promise.allSettled(
-					Array.from({ length: this.fileCountInput }, () => this.getMockApiZipData(true))
-				);
-		
-				let successfulFiles = 0;
-		
-				for (let i = 0; i < this.fileCountInput; i++) {
-					const result = responses[i];
-					
-					if (result.status === "fulfilled") {
-						const response = result.value;
-
-						const contentDisposition = response.headers.get("Content-Disposition");
-						const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
-		
-						const zipData = await response.blob();
-						mainZip.file(filename, zipData);
-						successfulFiles++;
-					} else {
-						this.progressType = 'danger';
-						this.progressBarColor = '#dc3545';
-						console.error(`Failed to fetch file ${i + 1}:`, result.reason);
-						return;
-					}
-					
-					this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
-				}
-		
-				if (successfulFiles === 0) {
-					throw new Error("All file downloads failed. Cannot create ZIP.");
-				}
-		
-				const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
-					this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
-				});
-		
-				this.downloadFile(zipBlob);
-				this.zipProgress = 100;
-			}
-		} catch (error) {
-			this.progressType = 'danger';
-			console.error("ZIP creation failed:", error);
-		} finally {
-			this.isProcessing = false;
-		}
-	}
-
-	async zipMultipleZipFilesWithJsZipParallelAllowFailWithRetry(): Promise<void> {
-		this.clear();
-		this.isProcessing = true;
-		this.zipProgress = 0;
-	
-		const maxRetries = 2;
-		const retryDelay = 1000;
-		
-		try {
-			if (this.fileCountInput === 1) {
-				await this.downloadSingleFile(true);
-				return;
-			}
-	
-			const mainZip = new JSZip();
-			const totalSteps = this.fileCountInput + 1;
-	
-			const downloadPromises = Array.from({ length: this.fileCountInput }, (_, i) => 
-				this.attemptRequestWithRetry(() => this.getMockApiZipData(true), maxRetries, retryDelay)
-			);
-	
-			const responses = await Promise.allSettled(downloadPromises);
-	
+			const totalSteps = this.fileCountInput + 1; //+1 compression operation
 			let successfulFiles = 0;
 	
-			for (let i = 0; i < this.fileCountInput; i++) {
-				const result = responses[i];
-	
-				if (result.status === "fulfilled") {
-					const response = result.value;
+			const fetchFile = async (index: number) => {
+				try {					
+					const response = await lastValueFrom(this.getMockApiZipDataObservable(this.allowFailure).pipe(
+						retry({
+							count: retryCount,
+							delay: (error, count) => {
+								console.warn(`Retrying request (${count}/${retryCount}) due to error:`, error.message);
+								return timer(count * retryDelayMs);
+							}
+						})
+					));
+					
+					if (!response.ok) {
+						throw new Error(`Failed to fetch file ${index + 1}`);
+					}
+					
 					const contentDisposition = response.headers.get("Content-Disposition");
-					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
-	
+					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${index + 1}.zip`;
+
 					const zipData = await response.blob();
-					mainZip.file(filename, zipData);
+					mainZip.file(filename, zipData, { compression: "DEFLATE", compressionOptions: { level: 6 } });
 					successfulFiles++;
-				} else {
-					this.progressType = 'danger';
-					this.progressBarColor = '#dc3545';
-					console.warn(`Failed to fetch file ${i + 1} after ${maxRetries} retries:`, result.reason);
-					return;
+				} catch (error) {
+					this.contractIdErrorList.push(index);
+
+					if (!this.allowFailure) throw error;
+					console.warn(`Failed to fetch file ${index + 1}:`, error);
 				}
+			};
 	
+			for (let i = 0; i < this.fileCountInput; i++) {
+				await fetchFile(i);
 				this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
 			}
 	
-			if (successfulFiles === 0) {
-				throw new Error("All file downloads failed. Cannot create ZIP.");
-			}
+			if (successfulFiles === 0) throw new Error("All file downloads failed. Cannot create ZIP.");
 	
 			const zipBlob = await mainZip.generateAsync({ type: "blob" }, (metadata) => {
 				this.zipProgress = Math.round((this.fileCountInput / totalSteps) * 100 + (metadata.percent / totalSteps));
@@ -381,6 +153,7 @@ export class AppComponent {
 	
 			this.downloadFile(zipBlob);
 			this.zipProgress = 100;
+			this.isModalShown = this.contractIdErrorList.length !== 0;
 		} catch (error) {
 			this.progressType = 'danger';
 			console.error("ZIP creation failed:", error);
@@ -403,7 +176,7 @@ export class AppComponent {
 				const totalFiles = this.fileCountInput + 1;
 		
 				for (let i = 0; i < this.fileCountInput; i++) {
-					const response = await this.getMockApiZipData();
+					const response = await lastValueFrom(this.getMockApiZipDataObservable());
 					const contentDisposition = response.headers.get("Content-Disposition");
 					const filename = contentDisposition ? this.extractFilenameFromContentDisposition(contentDisposition) : `file_${i + 1}.zip`;
 		
@@ -450,7 +223,7 @@ export class AppComponent {
 	}
 
 	private async downloadSingleFile(isFail: boolean = false) {
-		const response = await this.getMockApiZipData(isFail);
+		const response = await lastValueFrom(this.getMockApiZipDataObservable(isFail));
 		
 		if (!response.ok) {
 			throw new Error(`Failed to fetch file.`);
@@ -471,48 +244,22 @@ export class AppComponent {
 		const match = contentDisposition?.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
 		return match ? decodeURIComponent(match[1].replace(/["']/g, '')) : "default.zip";
 	}
-	
-	private async getMockApiZipData(isFail: boolean = false): Promise<Response> {
-		try {
-			const mockZipContent = new Uint8Array([80, 75, 3, 4, 20, 0, 0, 0, 8, 0]);
-			const zipBlob = new Blob([mockZipContent], { type: "application/zip" });
-		
-			await this.simulateApiCall();
-		
-			if (isFail && Math.random() < 0.2) { //20% chance error
-				return Promise.reject(new Error("Failed to fetch file: 500 Internal Server Error"));
-			}
-		
-			return this.createZipResponse(zipBlob);
-		} catch (error) {
-			console.error(error);
-			throw error;
-		}
-	}
 
-	private async attemptRequestWithRetry(requestFn: () => Promise<Response>, maxRetries: number, delay: number): Promise<Response> {
-		let attempt = 0;
-		while (attempt < maxRetries) {			
-			try {
-				const response = await requestFn();
-				if (response.ok) {
-					return response;
+	private getMockApiZipDataObservable(isFail: boolean = false): Observable<Response> {
+		return of(null).pipe(delay(Math.random() * 1000)).pipe(
+			mergeMap(() => {
+				if (isFail && Math.random() < this.errorChance) {
+					return throwError(() => new Error('Failed to fetch file: 500 Internal Server Error'));
 				}
-				throw new Error(`Request failed with status ${response.status}`);
-			} catch (error) {
-				attempt++;
-				if (attempt >= maxRetries) {
-					throw error;
-				}
-				console.log(`Retrying request (${attempt}/${maxRetries})...`);
-				await new Promise(res => setTimeout(res, delay * attempt));
-			}
-		}
-		throw new Error("Max retries exceeded");
-	}
-	  
-	private async simulateApiCall(): Promise<void> {
-		await new Promise(resolve => setTimeout(resolve, Math.random() * 1000));
+
+				const zip = new JSZip();
+				zip.file('test.txt', 'This is a test file inside the ZIP.');
+
+				return zip.generateAsync({ type: 'blob' }).then(zipBlob => {
+					return this.createZipResponse(zipBlob);
+				});
+			})
+		);
 	}
 	  
 	private createZipResponse(zipBlob: Blob): Response {
@@ -547,4 +294,15 @@ export class AppComponent {
 		};
 	}
 
+	showModal(): void {
+		this.isModalShown = true;
+	}
+	
+	hideModal(): void {
+		this.autoShownModal?.hide();
+	}
+	
+	onHidden(): void {
+		this.isModalShown = false;
+	}
 }
