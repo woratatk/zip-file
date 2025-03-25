@@ -8,13 +8,8 @@ import { FormsModule } from '@angular/forms';
 import { CircleProgressOptions, NgCircleProgressModule } from 'ng-circle-progress';
 import {RoundProgressComponent} from 'angular-svg-round-progressbar';
 import { EMPTY, lastValueFrom, Observable, of, throwError, timer } from 'rxjs';
-import { catchError, defaultIfEmpty, delay, map, mergeMap, retry } from 'rxjs/operators';
+import { catchError, defaultIfEmpty, delay, map, mergeMap, retry, take } from 'rxjs/operators';
 import { ModalDirective } from 'ngx-bootstrap/modal';
-
-type FileStruct = {
-	filename: string;
-	data: Blob;
-}
 
 type ReceiptType = '5' | '6';
 
@@ -105,10 +100,10 @@ export class AppComponent {
 	
 	async mainZip(): Promise<void> {
 		this.clear();
-		this.generateZipDownloadParams();
+		this.contractList = this.mockSelectData();  //mock select data
 		this.isProcessing = true;
 		this.zipProgress = 0;
-	
+		
 		try {
 			if (this.contractList.length === 1) {
 				await this.downloadSingleFile(this.contractList[0]);
@@ -124,7 +119,7 @@ export class AppComponent {
 				throw new Error("All file downloads failed. Cannot create ZIP.");
 			}
 	
-			await this.generateAndDownloadZip(mainZip, totalSteps);
+			await this.generateAndDownloadMainZip(mainZip, totalSteps);
 	
 		} catch (error) {
 			this.progressType = 'danger';
@@ -174,6 +169,7 @@ export class AppComponent {
 	private fetchFileWithRetry({ contractId, receiptType }: ZipDownloadParams): Promise<Response | null> {
 		return lastValueFrom(
 			this.getMockApiZipDataObservable(contractId, receiptType).pipe(
+				take(1),
 				retry({
 					count: this.maxRetries,
 					delay: (error, count) => {
@@ -183,7 +179,7 @@ export class AppComponent {
 				}),
 				catchError(error => {
 					console.warn(`Failed to fetch file from contractId ${contractId}:`, error);
-					this.contractIdErrorList.push(contractId);					
+					this.contractIdErrorList.push(contractId);
 					return this.allowFailure ? EMPTY : throwError(() => error);
 				}),
 				map(response => response?.ok ? response : null),
@@ -192,16 +188,16 @@ export class AppComponent {
 		);
 	}
 
-	private async generateAndDownloadZip(mainZip: JSZip, totalSteps: number): Promise<void> {		
+	private async generateAndDownloadMainZip(mainZip: JSZip, totalSteps: number): Promise<void> {		
 		const zipBlob = await mainZip.generateAsync({ type: "blob" }, metadata => {
 			this.zipProgress = this.zipProgress + (metadata.percent / totalSteps);
 		});
 	
-		this.downloadFile(zipBlob);
+		this.downloadFile(zipBlob, "Main.zip");
 		this.zipProgress = 100;
 	}
 
-	private downloadFile(zipBlob: Blob, fileName: string = "Main.zip") {
+	private downloadFile(zipBlob: Blob, fileName: string) {
 		const link = document.createElement("a");
 		const objectUrl = URL.createObjectURL(zipBlob);
 		link.href = objectUrl;
@@ -226,8 +222,8 @@ export class AppComponent {
 	/* START MOCK DATA */
 
 	//mock contract checkbox selection
-	private generateZipDownloadParams(): void {
-		this.contractList = Array.from({ length: this.fileCountInput }, (_, index) => ({
+	private mockSelectData(): ZipDownloadParams[] {
+		return Array.from({ length: this.fileCountInput }, (_, index) => ({
 			contractId: index + 1,
 			receiptType: Math.random() < 0.5 ? '5' : '6'
 		}));
@@ -241,7 +237,7 @@ export class AppComponent {
 				}
 
 				const zip = new JSZip();
-				zip.file('test.txt', 'This is a test file inside the ZIP.');
+				zip.file('inner-test-file.txt', 'This is a inner test file inside the ZIP.');
 
 				return zip.generateAsync({ type: 'blob' }).then(zipBlob => {
 					return this.createZipResponse(zipBlob);
