@@ -99,7 +99,6 @@ export class AppComponent {
 	/* START ZIP PROCESS */
 	
 	async mainZip(): Promise<void> {
-		this.clear();
 		this.contractList = this.mockSelectData();  //mock select data
 		this.isProcessing = true;
 		this.zipProgress = 0;
@@ -127,7 +126,7 @@ export class AppComponent {
 			console.error("ZIP creation failed:", error);
 		} finally {
 			this.isModalShown = this.contractIdErrorList.length > 0;
-			this.isProcessing = false;
+			this.clear();
 		}
 	}
 
@@ -160,7 +159,7 @@ export class AppComponent {
 			const blob = await fileData.blob();
 			const filename = this.getFilenameFromResponse(fileData, `file_${this.contractList[i].contractId}.zip`);
 
-			mainZip.file(filename, blob, { compression: "DEFLATE", compressionOptions: { level: 6 } });
+			mainZip.file(filename, blob);
 
 			this.zipProgress = Math.round(((i + 1) / totalSteps) * 100);
 		}
@@ -189,7 +188,7 @@ export class AppComponent {
 	}
 
 	private async generateAndDownloadMainZip(mainZip: JSZip, totalSteps: number): Promise<void> {		
-		const zipBlob = await mainZip.generateAsync({ type: "blob" }, metadata => {
+		const zipBlob = await mainZip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } }, metadata => {
 			this.zipProgress = this.zipProgress + (metadata.percent / totalSteps);
 		});
 	
